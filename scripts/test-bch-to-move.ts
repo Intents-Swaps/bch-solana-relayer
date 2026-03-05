@@ -1,9 +1,9 @@
 import { TestNetWallet } from 'mainnet-js';
 import { MovementService } from '../src/services/MovementService';
 import { BCHService } from '../src/services/BCHService';
+import { BCHSolanaRelayerCore } from '../src/services/BCHSolanaRelayerCore';
 import * as fs from 'fs';
 import chalk from 'chalk';
-import fetch from 'node-fetch';
 import { config, TOKENS } from '../src/config';
 import { randomBytes } from 'crypto';
 
@@ -21,7 +21,6 @@ async function main() {
 
 
     // 2. Init User Services
-    const relayer = new BCHSolanaRelayerCore();
     const userBchService = new BCHService();
     await userBchService.initWallet(userKeys.bchWif);
 
@@ -60,7 +59,6 @@ async function main() {
     console.log(chalk.green(`   ✅ BCH Locked! Contract: ${contractAddress}`));
 
     // 5. Start Embedded Relayer & Submit Intent
-    const { BCHSolanaRelayerCore } = await import('../src/services/BCHSolanaRelayerCore');
     const relayer = new BCHSolanaRelayerCore();
     await new Promise(r => setTimeout(r, 2000)); // Let relayer init
 

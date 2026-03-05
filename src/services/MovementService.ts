@@ -195,6 +195,7 @@ export class MovementService {
 
     /**
      * Get relayer balances
+     */
     async getBalances(): Promise<ChainBalance[]> {
         const balances: ChainBalance[] = [];
 
@@ -229,7 +230,7 @@ export class MovementService {
                         decimals: 6,
                     });
                 }
-                
+
                 // Success, exit retry loop
                 break;
             } catch (e: any) {

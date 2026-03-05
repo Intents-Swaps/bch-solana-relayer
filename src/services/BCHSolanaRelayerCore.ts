@@ -308,16 +308,34 @@ export class BCHSolanaRelayerCore {
         // 1. PENDING -> SOURCE_LOCKED
         // Verify Solana Escrow exists and is funded
         if (intent.status === 'PENDING' && intent.solanaEscrowPda) {
-            // Check account info
-            // We assume User sent correct PDA.
-    
+            try {
+                const escrowPda = new PublicKey(intent.solanaEscrowPda);
+                const accountInfo = await this.solanaService.connection.getAccountInfo(escrowPda);
 
-            // Let's assume Valid for now to proceed.
-            // Ideally: `await this.solanaService.getEscrowBalance(pda)` 
+                if (!accountInfo) {
+                    // Escrow PDA doesn't exist yet — wait for next poll
+                    return;
+                }
 
-            intent.status = 'SOURCE_LOCKED';
-            intent.updatedAt = Date.now();
-            console.log(chalk.green(`✅ Solana Locked confirmed (Simulated check)`));
+                // Verify the account is owned by our program (not a random account)
+                const programId = this.solanaService.program?.programId;
+                if (programId && !accountInfo.owner.equals(programId)) {
+                    console.error(chalk.red(`❌ Escrow PDA ${intent.solanaEscrowPda} not owned by intent_swap program`));
+                    (intent as any).status = 'FAILED';
+                    (intent as any).failReason = 'Escrow PDA not owned by expected program';
+                    intent.updatedAt = Date.now();
+                    this.activeIntents.delete(intent.id);
+                    this.completedIntents.push(intent);
+                    return;
+                }
+
+                intent.status = 'SOURCE_LOCKED';
+                intent.updatedAt = Date.now();
+                console.log(chalk.green(`✅ Solana Locked confirmed (on-chain verified, ${accountInfo.lamports} lamports in PDA)`));
+            } catch (e: any) {
+                console.error(chalk.yellow(`⚠️ Could not verify Solana escrow: ${e.message}`));
+                // Don't advance — retry on next poll
+            }
         }
 
         // 2. SOURCE_LOCKED -> DEST_FILLED
@@ -513,9 +531,40 @@ export class BCHSolanaRelayerCore {
         console.log(chalk.gray(`   [MOV→BCH] Polling intent ${intent.id} — status: ${intent.status}, escrowId: ${intent.movementEscrowId || 'NONE'}`));
 
         if (intent.status === 'PENDING' && intent.movementEscrowId) {
-            intent.status = 'SOURCE_LOCKED';
-            intent.updatedAt = Date.now();
-            console.log(chalk.green(`✅ Movement Locked confirmed (Simulated check)`));
+            // Verify Movement escrow actually exists on-chain
+            try {
+                const escrowId = parseInt(intent.movementEscrowId);
+                if (isNaN(escrowId)) {
+                    console.log(chalk.yellow(`   ⚠️ Invalid escrow ID: ${intent.movementEscrowId}`));
+                    return;
+                }
+
+                const details = await this.movementService.getEscrowDetails(escrowId);
+                if (!details || !Array.isArray(details) || details.length === 0) {
+                    // Escrow not found on-chain yet — wait for next poll
+                    console.log(chalk.yellow(`   ⚠️ Escrow ${escrowId} not found on Movement chain yet`));
+                    return;
+                }
+
+                const escrowData = details[0] as any;
+                // Verify it hasn't already been claimed or refunded
+                if (escrowData.is_claimed) {
+                    console.error(chalk.red(`❌ Escrow ${escrowId} already claimed!`));
+                    intent.status = 'FAILED';
+                    intent.failReason = 'Source escrow already claimed';
+                    intent.updatedAt = Date.now();
+                    this.activeIntents.delete(intent.id);
+                    this.completedIntents.push(intent);
+                    return;
+                }
+
+                intent.status = 'SOURCE_LOCKED';
+                intent.updatedAt = Date.now();
+                console.log(chalk.green(`✅ Movement Locked confirmed (on-chain verified, escrow ID: ${escrowId})`));
+            } catch (e: any) {
+                console.error(chalk.yellow(`⚠️ Could not verify Movement escrow: ${e.message}`));
+                // Don't advance — retry on next poll
+            }
         } else if (intent.status === 'PENDING') {
             console.log(chalk.yellow(`   ⚠️ Intent still PENDING — movementEscrowId is missing!`));
         }

@@ -6,7 +6,13 @@
     "scripts": {
         "dev": "tsx src/index.ts",
         "build": "tsc",
-        "start": "node dist/index.js"
+        "start": "node dist/index.js",
+        "test:setup": "tsx scripts/setup-e2e.ts",
+        "test:balances": "tsx scripts/check-balances.ts",
+        "test:bch-to-sol": "tsx scripts/test-bch-to-sol.ts",
+        "test:sol-to-bch": "tsx scripts/test-sol-to-bch.ts",
+        "test:independent": "tsx scripts/test-flows-independent.ts",
+        "test:usdc": "tsx scripts/test-usdc-flows.ts"
     },
     "dependencies": {
         "@aptos-labs/ts-sdk": "^6.0.0",

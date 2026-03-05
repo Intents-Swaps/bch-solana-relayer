@@ -49,57 +49,135 @@ Reviewers examining this repository should focus on:
 * 💻 Run locally: `npm run dev`
 
 ## Prerequisites
-1. **Node.js**: Installed (v18+).
+1. **Node.js**: v18+ installed.
 2. **Funds**:
    - **BCH Chipnet**: Use a faucet (e.g. `tbch.googol.cash`) to fund the wallet generated in `.env` (or let `mainnet-js` auto-generate).
    - **Solana Devnet**: Use `solana airdrop 2` to fund the Relayer's keypair.
 
-## 1. Build Verification
-The project compile errors have been resolved. To verify the build:
+## Quick Start (Clone to Test)
+
 ```bash
+git clone https://github.com/Intents-Swaps/bch-solana-relayer.git
 cd bch-solana-relayer
+npm install
+cp .env.example .env         # Configure keys (see below)
+npm run test:setup            # Generate user wallets + fund them
+npm run test:bch-to-sol       # Run BCH → SOL E2E test
+npm run test:sol-to-bch       # Run SOL → BCH E2E test
+```
+
+## 1. Build Verification
+
+```bash
 npm run build
 # or just check types
 npx tsc --noEmit
 ```
 
-## 2. Verify BCH Service (Deploy HTLC)
-The `scripts/deploy-htlc.ts` script initializes the BCH wallet, funds it (if needed/possible), and deploys a test HTLC.
-```bash
-npx tsx scripts/deploy-htlc.ts
-```
-**Expected Output:**
-- Wallet initialization success.
-- "HTLC Deployed!" with Contract Address and TxID.
-- *Note: If the wallet has 0 funds, this will fail. Fund the address shown in the output.*
+## 2. Environment Setup
 
-## 3. Verify Solana Service
-The `scripts/test-solana.ts` script initializes the Solana service and attempts to create an escrow. 
-```bash
-npx tsx scripts/test-solana.ts
-```
-**Expected Output:**
-- "Solana Service Initialized".
-- "Caught expected error...".
-- *Note: The error confirms that the code successfully built the transaction and attempted to send it, but failed due to lack of funds (expected on fresh keypair).*
+Copy the example `.env` and configure your relayer keys:
 
-## 4. Running the Relayer
-To start the relayer server:
 ```bash
-npx tsx src/index.ts
+cp .env.example .env
 ```
-The server runs on port 3000 (default).
-- **Health Check**: `GET http://localhost:3000/health`
-- **Active Intents**: `GET http://localhost:3000/orders`
 
-## 5. End-to-End Test (Manual)
-1. **Start Relayer**: `npx tsx src/index.ts`
-2. **Deploy User HTLC**: `npx tsx scripts/deploy-htlc.ts` -> Note the `hash` and `contractAddress`.
-3. **Initiate Swap**: Send a POST request to `/swap/bch-to-solana` with the details from the deployment output.
-4. **Monitor**: Watch the console logs for the Relayer picking up the intent, creating the Solana escrow (`DEST_LOCKED`), and completing the flow.
+Required variables in `.env`:
+| Variable | Description |
+|----------|-------------|
+| `BCH_PRIVATE_KEY_WIF` | Relayer's BCH wallet (WIF format, Chipnet) |
+| `SOLANA_PRIVATE_KEY` | Relayer's Solana keypair (JSON array of bytes) |
+| `MOVEMENT_PRIVATE_KEY` | Relayer's Movement private key (hex) |
+| `SOLANA_RPC_URL` | Solana RPC (default: `https://api.devnet.solana.com`) |
+
+> **Tip**: Run `npm run test:setup` to auto-generate keys and fund wallets if starting fresh.
+
+## 3. Running the Relayer
+
+```bash
+npm run dev
+```
+
+The server starts on port `3004` (default). Endpoints:
+- `GET /health` — Service status and wallet addresses
+- `GET /orders` — Active and completed intents
+- `GET /solver` — Solver dashboard (balances, financials, all intents)
+- `POST /swap/bch-to-solana` — Initiate BCH → SOL swap
+- `POST /swap/solana-to-bch` — Initiate SOL → BCH swap
+- `POST /swap/bch-to-move` — Initiate BCH → Movement swap
+- `POST /swap/move-to-bch` — Initiate Movement → BCH swap
+- `POST /claim` — Reveal secret to trigger claim
+
+## 4. End-to-End Tests
+
+The project includes automated E2E tests that run full HTLC atomic swap lifecycles on live testnets (BCH Chipnet + Solana Devnet).
+
+### Prerequisites
+
+1. **Fund the relayer wallet** with BCH Chipnet and Solana Devnet tokens
+2. **Run the setup script** to generate test user wallets and fund them:
+
+```bash
+npm run test:setup
+```
+
+This creates a `user_keys.json` (gitignored) with test user wallets for BCH, Solana, and Movement. It also auto-funds the user from the relayer if the relayer has sufficient balance.
+
+### Test 1: BCH → Solana (User sells BCH, receives SOL)
+
+```bash
+npm run test:bch-to-sol
+```
+
+**What it does:**
+1. User generates a secret `S` and computes `H = sha256(S)`
+2. User locks 10,000 sats in a CashScript HTLC on BCH Chipnet
+3. Embedded relayer detects the lock via Electrum and creates a Solana escrow
+4. User claims SOL from the escrow by revealing `S`
+5. ✅ Test passes when the Solana claim transaction succeeds
+
+**Expected output:**
+```
+🚀 Starting Integration Test: BCH (User) -> SOL (User) [Embedded Relayer]
+   ✅ BCH Locked! Contract: bchtest:p...
+   ✅ Relayer Accepted Intent: bch_sol_...
+   ✅ Escrow found on Solana!
+   ✅ Claimed SOL! Tx: <solana_tx_hash>
+   🎉 E2E Test Passed (BCH -> SOL)
+```
+
+### Test 2: Solana → BCH (User sells SOL, receives BCH)
+
+```bash
+npm run test:sol-to-bch
+```
+
+**What it does:**
+1. User generates a secret `S` and computes `H = sha256(S)`
+2. User locks 0.01 SOL in an Anchor HTLC escrow on Solana Devnet
+3. Embedded relayer verifies the Solana escrow on-chain and deploys a CashScript HTLC on BCH
+4. User claims BCH from the HTLC by revealing `S`
+5. ✅ Test passes when the BCH claim transaction succeeds
+
+**Expected output:**
+```
+🚀 Starting Integration Test: SOL (User) -> BCH (User) [Embedded Relayer]
+   ✅ SOL Locked! PDA: <escrow_pda>
+   ✅ Relayer Accepted Intent: sol_bch_...
+   ✅ Relayer Locked BCH!
+   ✅ Claimed BCH! Tx: <bch_tx_hash>
+   🎉 E2E Test Passed (SOL -> BCH)
+```
+
+### Other Test Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run test:balances` | Check BCH/SOL/MOVE/USDC balances for relayer and user |
+| `npm run test:independent` | BCH ↔ Movement direct HTLC lock+claim (no relayer) |
+| `npm run test:usdc` | USDC swap flows across chains |
 
 ## Configuration
-- `.env`: Contains private keys and network settings. Ensure `BCH_NETWORK=chipnet` and `SOLANA_RPC_URL=https://api.devnet.solana.com`.
 
 ---
 

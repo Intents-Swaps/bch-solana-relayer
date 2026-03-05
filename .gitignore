@@ -3,4 +3,13 @@ dist/
 .env
 *.log
 wallet.json
+user_keys.json
 nul
+
+# Debug / scratch test scripts (not for commit)
+scripts/deploy-htlc.ts
+scripts/test-solana.ts
+scripts/test-bch-htlc-diagnostic.ts
+scripts/test-all-flows.ts
+scripts/test-bch-to-move.ts
+scripts/test-move-to-bch.ts

@@ -20,7 +20,7 @@ interface IntentSwap {
 export class SolanaService {
     public connection: Connection;
     public keypair: Keypair;
-    private program: Program<any>;
+    public program: Program<any>;
     private provider: anchor.AnchorProvider;
 
     constructor(privateKey?: string) {
